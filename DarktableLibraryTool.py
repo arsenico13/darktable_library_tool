@@ -5,13 +5,8 @@ from os import path
 import os
 import shutil
 
-VERSION = "0.1"
-print("Darktable Preset Export Tool, Version {}\n".format(VERSION))
-
-#Startup
-dbPath = pathlib.Path(path.expanduser(input("Enter database path: ")))
-
-def CreateMainDbBackup():
+#Function Definitions
+def CreateDbBackup(dbPath : pathlib.Path):
     extCnt = 0
     while True:
         backupPath = dbPath.parent / (dbPath.stem + "_back" + str(extCnt) + dbPath.suffix)
@@ -23,8 +18,19 @@ def CreateMainDbBackup():
     print("Create DB backup: {}\n".format(backupPath))
     shutil.copy(str(dbPath), str(backupPath))
 
+#Startup
+VERSION = "0.1"
+print("Darktable Preset Export Tool, Version {}\n".format(VERSION))
+print("You can either open the Darktable database (default: ~/.config/darktable/library.db) or a database created by " +
+      "the export command of this tool.\n")
+
 #Opening DB
-print(path.exists(str(dbPath)))
+while True:
+    dbPath = pathlib.Path(path.expanduser(input("Enter database path: ")))
+    if path.exists(str(dbPath)):
+        break
+    else:
+        print("File does not exist, try again\n")
 database = sqlite3.connect(str(dbPath))
 
 #Fetching DB Information
@@ -47,8 +53,6 @@ def PrintSelectedPresets():
     for name, operation in GetSelectedPresets("name, operation"):
         print("{:30}{}".format(name, operation))
 
-
-
 #Operations
 while True:
     #Display Menu
@@ -59,6 +63,7 @@ while True:
     print("  filter           - Filter selected presets")
     print("  export           - Export selected presets")
     print("  import           - Import resets to DB")
+    print("  delete           - Delete selected presets (take care!)")
     print("  quit             - exit program")
     cmd = input()
     print()
@@ -100,17 +105,32 @@ while True:
             os.mkdir(str(exportPath.parent))
         exportDb = sqlite3.connect(str(exportPath))
         c = exportDb.cursor()
-        sqlCmd = "CREATE TABLE presets ({});".format(", ".join(["{} {}".format(colNames[i], colTypes[i]) for i in range(len(colNames))]))
-        c.execute(sqlCmd)
-        #for row in GetSelectedPresets("*"):
+        if not path.exists(str(exportPath)):
+            print("Selected db does not exist, it is created")
+            sqlCmd = "CREATE TABLE presets ({});".format(", ".join(["{} {}".format(colNames[i], colTypes[i]) for i in range(len(colNames))]))
+            c.execute(sqlCmd)
+        else:
+            print("Selected db exists, data is appended")
+            #for row in GetSelectedPresets("*"):
         sqlCmd = "INSERT INTO presets VALUES ({})".format(",".join(itertools.repeat("?", len(colNames))))
         c.executemany(sqlCmd, GetSelectedPresets("*"))
         exportDb.commit()
+        print()
+        continue
+
+    elif cmd == "delete":
+        c = database.cursor()
+        for name, operation in GetSelectedPresets("name, operation"):
+            sqlCmd = "DELETE FROM presets WHERE (name='{}' AND operation='{}')".format(name, operation)
+            c.execute(sqlCmd)
+        database.commit()
+        print("Deleted. Filter is automatically reset\n")
+        filters = FILTERS_INIT
         continue
 
     elif cmd == "import":
 
-        CreateMainDbBackup()
+        CreateDbBackup(dbPath)
 
         importPath = pathlib.Path(input("Enter import file path (extension .db): "))
         print()
