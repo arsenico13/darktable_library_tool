@@ -82,7 +82,13 @@ class DarktableDb:
         return backupPath.name
 
     def DeleteBackups(self):
-        raise NotImplementedError()
+        """
+        Delete all backups of this DB
+        """
+        dir = self.path.parent
+        for file in os.listdir(str(dir)):
+            if file.startswith(self.path.stem + "_back"):
+                os.remove(str(dir/file))
 
     def ResetDatabaseFilter(self):
         """

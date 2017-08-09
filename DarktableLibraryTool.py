@@ -57,6 +57,7 @@ while True:
     print("  import           - Import resets to DB")
     print("  delete           - Delete selected presets (take care!)")
     print("  changeDb         - Open a different DB")
+    print("  removeBackups    - Remove all backups of this DB automatically created")
     print("  quit             - exit program")
     cmd = input()
     print()
@@ -126,6 +127,9 @@ while True:
     elif cmd == "changeDb":
         activeDb.Close()
         activeDb = SetActiveDb()
+
+    elif cmd == "removeBackups":
+        activeDb.DeleteBackups()
 
     else:
         print("Illegal command, try again\n")
