@@ -1,9 +1,8 @@
 import sqlite3
 import pathlib
-import itertools
 from os import path
-import os
 import shutil
+from DarktableDb import DarktableDb, FilterType
 
 #Function Definitions
 def CreateDbBackup(dbPath : pathlib.Path):
@@ -25,32 +24,25 @@ print("You can either open the Darktable database (default: ~/.config/darktable/
       "the export command of this tool.\n")
 
 #Opening DB
-while True:
-    dbPath = pathlib.Path(path.expanduser(input("Enter database path: ")))
-    if path.exists(str(dbPath)):
-        break
-    else:
-        print("File does not exist, try again\n")
-database = sqlite3.connect(str(dbPath))
 
-#Fetching DB Information
-ti = database.cursor().execute("PRAGMA table_info(presets)")
-colNames = [x[1] for x in ti.fetchall()]
-ti = database.cursor().execute("PRAGMA table_info(presets)")
-colTypes = [x[2] for x in ti.fetchall()]
+def SetActiveDb() -> DarktableDb:
+    while True:
+        dbPath = pathlib.Path(input("Enter database path: "))
+        activeDb = DarktableDb(dbPath)
+        if activeDb.dbExists:
+            break
+        else:
+            print("File does not exist, try again\n")
+    activeDb.OpenExisting()
+    return activeDb
 
-FILTERS_INIT = "writeprotect='0'"
-filters = FILTERS_INIT
+activeDb = SetActiveDb()
 
-def GetSelectedPresets(columns : str):
-    c = database.cursor()
-    c.execute("SELECT {} FROM presets WHERE ({})".format(columns, filters))
-    return c.fetchall()
 
 def PrintSelectedPresets():
     print("{:30}{}".format("NAME", "OPERATION"))
     print("{:->30}{:->30}".format("", ""))
-    for name, operation in GetSelectedPresets("name, operation"):
+    for name, operation in activeDb.GetFilteredColumns(["name", "operation"], filtered=True):
         print("{:30}{}".format(name, operation))
 
 #Operations
@@ -64,6 +56,7 @@ while True:
     print("  export           - Export selected presets")
     print("  import           - Import resets to DB")
     print("  delete           - Delete selected presets (take care!)")
+    print("  changeDb         - Open a different DB")
     print("  quit             - exit program")
     cmd = input()
     print()
@@ -78,6 +71,7 @@ while True:
         print("  operationis <x>    - Only include presets for operation <x>")
         print("  reset              - Reset filters")
         filtIn = input()
+        print()
 
         filt = filtIn.split(" ")[0]
         try:
@@ -85,76 +79,60 @@ while True:
         except IndexError:
             param = ""
         if filt == "namelike":
-            filters += " AND name LIKE '{}'".format(param)
+            activeDb.AddDatabaseFilter(FilterType.NameLike, param)
         elif filt == "operationis":
-            filters += " AND operation='{}'".format(param)
+            activeDb.AddDatabaseFilter(FilterType.OperationIs, param)
         elif filt == "reset":
-            filters = FILTERS_INIT
+            activeDb.ResetDatabaseFilter()
         else:
-            print("Illegal Input: {}".format(filtIn))
-            continue
-
-        print()
-        continue
+            print("Illegal Input: {}\n".format(filtIn))
 
     elif cmd == "export":
 
         exportPath = pathlib.Path(input("Enter export file path (extension .db): "))
         print()
-        if not path.exists(str(exportPath.parent)):
-            os.mkdir(str(exportPath.parent))
-        exportDb = sqlite3.connect(str(exportPath))
-        c = exportDb.cursor()
-        if not path.exists(str(exportPath)):
-            print("Selected db does not exist, it is created")
-            sqlCmd = "CREATE TABLE presets ({});".format(", ".join(["{} {}".format(colNames[i], colTypes[i]) for i in range(len(colNames))]))
-            c.execute(sqlCmd)
+        exportDb = DarktableDb(exportPath)
+        if exportDb.dbExists:
+            print("Selected db exists, data is appended\n")
+            exportDb.OpenExisting()
         else:
-            print("Selected db exists, data is appended")
-            #for row in GetSelectedPresets("*"):
-        sqlCmd = "INSERT INTO presets VALUES ({})".format(",".join(itertools.repeat("?", len(colNames))))
-        c.executemany(sqlCmd, GetSelectedPresets("*"))
-        exportDb.commit()
-        print()
-        continue
+            print("Selected db does not exist, it is created\n")
+            exportDb.CreateNew(activeDb)
+        exportDb.InsertEntries(activeDb.GetFilteredColumns(["*"], filtered=True))
+        exportDb.Close()
 
     elif cmd == "delete":
-        c = database.cursor()
-        for name, operation in GetSelectedPresets("name, operation"):
-            sqlCmd = "DELETE FROM presets WHERE (name='{}' AND operation='{}')".format(name, operation)
-            c.execute(sqlCmd)
-        database.commit()
+        activeDb.DeleteFilteredItems()
+        activeDb.ResetDatabaseFilter()
         print("Deleted. Filter is automatically reset\n")
-        filters = FILTERS_INIT
-        continue
 
     elif cmd == "import":
-
-        CreateDbBackup(dbPath)
+        activeDb.CreateBackup()
 
         importPath = pathlib.Path(input("Enter import file path (extension .db): "))
-        print()
-        importDb = sqlite3.connect(str(importPath))
-        c = importDb.cursor()
-        allPresets = c.execute("SELECT * FROM presets")
+        importDb = DarktableDb(importPath)
+        importDb.OpenExisting()
 
-        sqlCmd = "INSERT INTO presets VALUES ({})".format(",".join(itertools.repeat("?", len(colNames))))
-        cdb = database.cursor()
+        print()
+        allPresets = importDb.GetFilteredColumns(["*"], filtered=False)
         for preset in allPresets:
             try:
-                cdb.execute(sqlCmd, preset)
+                activeDb.InsertEntries([preset])
             except sqlite3.IntegrityError:
                 print("Skipped: {} for operator {} (already exists)".format(preset[0], preset[2]))
+        importDb.Close()
         print()
-        database.commit()
-        continue
+
+    elif cmd == "changeDb":
+        activeDb.Close()
+        activeDb = SetActiveDb()
 
     else:
         print("Illegal command, try again\n")
         continue
 
 
-database.close()
+activeDb.Close()
 exit()
 
 
