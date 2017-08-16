@@ -17,6 +17,9 @@ class FilterType(Enum):
 
 class DarktableDb:
 
+    class TableNotFoundError(Exception):
+        pass
+
 
 
     def __init__(self, dbpath : pathlib.Path):
@@ -59,6 +62,9 @@ class DarktableDb:
         if not self.dbExists:
             raise FileNotFoundError("File {} does not exist".format(self.path))
         self._con = sqlite3.connect(str(self.path))
+        tb_exists = "SELECT name FROM sqlite_master WHERE type='table' AND name='presets'"
+        if not self._con.execute(tb_exists).fetchone():
+            raise self.TableNotFoundError("The database selected does not have a table named 'presets'")
         self._InitDbInfo()
 
     def CreateBackup(self) -> str:

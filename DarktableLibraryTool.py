@@ -18,9 +18,9 @@ def CreateDbBackup(dbPath : pathlib.Path):
     shutil.copy(str(dbPath), str(backupPath))
 
 #Startup
-VERSION = "0.1"
+VERSION = "0.4"
 print("Darktable Preset Export Tool, Version {}\n".format(VERSION))
-print("You can either open the Darktable database (default: ~/.config/darktable/library.db) or a database created by " +
+print("You can either open the Darktable database (default: ~/.config/darktable/data.db, older versions: library.db in the same path) or a database created by " +
       "the export command of this tool.\n")
 
 #Opening DB
@@ -30,10 +30,13 @@ def SetActiveDb() -> DarktableDb:
         dbPath = pathlib.Path(input("Enter database path: "))
         activeDb = DarktableDb(dbPath)
         if activeDb.dbExists:
-            break
+            try:
+                activeDb.OpenExisting()
+                break
+            except DarktableDb.TableNotFoundError as e:
+                print(str(e) + "\n")
         else:
             print("File does not exist, try again\n")
-    activeDb.OpenExisting()
     return activeDb
 
 activeDb = SetActiveDb()
